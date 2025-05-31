@@ -1,0 +1,721 @@
+---
+title: "Louvian clusters on hospital network"
+author: "Susanne Pinto"
+date: "2025-05"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r environment, include=FALSE}
+rm( list = ls() ) # remove working environment
+```
+
+## Load the packages
+
+```{r packages, message=FALSE}
+library( here )
+library( tidyverse ) 
+library( haven ) # to import SAS en spss files
+library( reshape2 ) # data from long to wide format
+library( dplyr ) # remove duplicated rows
+library( ggplot2 ) # plots
+library( data.table )
+library( lubridate ) # merge consecutive rows based on date/time
+library( igraph ) # creating network
+library( writexl ) # save data as excel
+library( anytime ) # work with time in rows
+library( mclust )  # MCL clustering
+library( viridis ) # color palette
+library( cluster ) # obtain optimal k
+library( fpc ) # obtain optimal k
+library( RColorBrewer ) # palette
+library( gplots ) # for heatmap
+```
+
+
+## Load the data
+
+```{r load data}
+# Read in the opname data
+Patient_movements <- read_sas(here( "Patient_movements", "Data", "opnames_pseudo20230725.sas7bdat"))
+
+# Rearrange the columns so pseudo-IDs are the first colums
+Patient_movements <- Patient_movements[, c( 1, 14, 13, 2:12 )]
+
+# Sort the data (rows)
+Patient_movements1 <- Patient_movements %>% 
+   arrange( studyId_outbreakdetec_Patient, studyId_outbreakdetec_Hos_ID, hos_start_dt, hos_stop_dt, hos_mut_start_dt, hos_mut_stop_dt )
+```
+
+
+## Use 'voorkeurs' PatientID
+
+Some patients have more patientIDs. The way in which hospitalizations in these datasets are linked to patient IDs ensures that a unique hospitalization ID is associated with all patient IDs known for a unique patient, thereby increasing the count for a unique hospitalization by the number of known patient IDs.The file "voorkeurs_id.sas7bdat" contains all studyId_outbreakdetec_Patient entries that are not based on the preferred ID, along with a column named "studyId_outbreakdetec_Pat_voork." This is the pseudo ID created for the study that takes precedence. Delete the rows that have the same studyId_outbreakdetec_Patient as those in this file.
+
+```{r voorkeurs data}
+# Read in the voorkeurs data
+preferredID <- read_sas(here("Patient_movements", "Data", "voorkeurs_id.sas7bdat"))
+
+# Sort the data (rows)
+preferredID <- preferredID %>% 
+   arrange( studyId_outbreakdetec_Pat_voork, studyId_outbreakdetec_Patient )
+
+# Filtering rows in Patient_movements1 based on preferredID
+# Patient_movements1.filtered will now contain rows from Patient_movements1 where studyId_outbreakdetec_Patient is not in preferredID
+Patient_movements1.filtered <- Patient_movements1 %>%
+  filter( !studyId_outbreakdetec_Patient %in% preferredID$studyId_outbreakdetec_Patient ) 
+
+# clean environement
+rm( preferredID )
+```
+
+
+## Remove bezwaar patients
+
+This dataset contains the objection of contributing to research etc. First remove the rows for people without objection, then create new variables and give them a value of 1 (bezwaar) or 0 (geen bezwaar). The people have the option of different catagories to which they can object, here if any of the categories was checked we counted it as an objection.
+
+```{r bezwaar data, message=FALSE}
+bezwaar <- read_sas(here("Patient_movements", "Data", "bezwaar_umc.sas7bdat"))
+
+# Date of objection
+bezwaar <- bezwaar[ !is.na( bezwaar$umc_bezwaar_dt ),]
+
+# Objection to research
+bezwaar$research <- ifelse( bezwaar$BezwaarRestOnderZoek == "1", "1", "0" )
+bezwaar$research[is.na( bezwaar$research )] <- 0
+bezwaar$research1 <- as.numeric( bezwaar$research )
+
+# Objection to education
+bezwaar$edu <- ifelse( bezwaar$BezwaarRestOnderWijs == "1", "1", "0" )
+bezwaar$edu[is.na( bezwaar$edu )] <- 0
+bezwaar$edu1 <- as.numeric( bezwaar$edu )
+
+# Objection to ??
+bezwaar$recontact <- ifelse( bezwaar$BezwaarInfoToeval == "1", "1", "0" )
+bezwaar$BezwaarInfoToeval[is.na( bezwaar$BezwaarInfoToeval )] <- 0
+bezwaar$recontact1 <- as.numeric( bezwaar$recontact )
+bezwaar$recontact1[is.na( bezwaar$recontact1 )] <- 0
+bezwaar$recontact[is.na( bezwaar$recontact )] <- 0
+
+# Objection to medical data
+bezwaar$data <- ifelse( bezwaar$BezwaarMedData == "1", "1", "0" )
+bezwaar$data[is.na( bezwaar$data )] <- 0
+bezwaar$data1 <- as.numeric( bezwaar$data )
+
+# make a new table and group the variables per patient
+bezwaar1 <- bezwaar %>% 
+  group_by( umc_bezwaar_dt, studyId_outbreakdetec_Patient ) %>% 
+  summarize( research2 = sum( research1 ),
+             edu2 = sum( edu1 ),
+             recontact2 = sum( recontact1 ),
+             data2 = sum( data1 )) %>% 
+  arrange( umc_bezwaar_dt, studyId_outbreakdetec_Patient )
+
+# Calculate new datasets based on the values above
+bezwaar2 <- bezwaar1 %>% mutate( 
+  bezwaar3 = research2 + edu2 + data2,
+  bezwaar4 = research2 + edu2 + recontact2 + data2,
+  recontract3 = if_else( bezwaar4 > bezwaar3 & bezwaar3 > 0, 1, 0 ))
+bezwaar2 <- bezwaar2 %>% arrange( studyId_outbreakdetec_Patient, umc_bezwaar_dt )
+
+bezwaar3 <- bezwaar2[ !duplicated( bezwaar2$studyId_outbreakdetec_Patient, fromLast = TRUE ), ]
+bezwaar3 <- bezwaar3 %>% arrange( studyId_outbreakdetec_Patient ) 
+
+# Merge bezwaar3 and Patient_movements1.filtered
+Patient_movements1.bezwaar <- merge( bezwaar3, Patient_movements1.filtered, by = c( "studyId_outbreakdetec_Patient" ), all = TRUE)
+
+# Remove patients that were not in the original data, but were in the bezwaar data
+Patient_movements1.bezwaar <- Patient_movements1.bezwaar[(Patient_movements1.bezwaar$studyId_outbreakdetec_Patient %in% Patient_movements1$studyId_outbreakdetec_Patient),]
+# add is.na to function, because else it does not know what to do with NA values in the bezwaar4 column
+Patient_movements1.bezwaar <- Patient_movements1.bezwaar[ !( Patient_movements1.bezwaar$bezwaar4 >= 1 ) | is.na( Patient_movements1.bezwaar$bezwaar4 ), ] 
+
+# clean environment
+rm( bezwaar, bezwaar1, bezwaar2, bezwaar3 )
+```
+
+
+## Departments
+
+There are many departments, this will make the network unnecessary large and difficult to interpret. Some departments can be removed such as the psychiatric departments, departments of the CHM (military hospital, which should not be included), departments of the emergency hospital, departments with very few admissions (= 1), and a few scattered PMC departments. 
+
+```{r departments}
+# The rows (i.e. departments) I want to exclude, the wards we exclude are: 
+# Psychiatric departments
+# Departments of the CHM (military hospital, also not included in the study)
+# Departments of the calamity hospital
+# Departments with very few admissions (=1)
+# And a few scattered PMC (Pediatric Medical Center) departments
+wards_to_exclude <- c( "Behandelcentrum IVF Klinisch", "Calamiteitenhospitaal Crashroom", "Calamiteitenhospitaal IC Ruimte 4",
+                      "Calamiteitenhospitaal Low Care 1", "Calamiteitenhospitaal Low Care 2", "Calamiteitenhospitaal Medium Care",
+                      "Centrum Dagdiagnostisch kinderneurologie", "Dt Ontwikkeling in Perspectief", "IC Fx / Calamiteiten Ruimte 1", 
+                      "IC Fx / Calamiteiten Ruimte 2", "IC Fx / Calamiteiten Ruimte 3", "Kl Ontwikkeling in Perspectief", 
+                      "Klin Diagn & Vroege Psychose", "Klin. Affectieve & Psychotische stoorn.", "Klin.Acuut & Intensieve. Zorg Jeugd",
+                      "Klinische Acuut & Intensieve Zorg", "Klinische Zorgdag Thuissituatie", "OK F2 Recovery verpl DP&S", 
+                      "OK WKZ lokatie Anaesthesie verpl", "PMC Pauw dagbehandeling", "PMC Pauw kliniek","Verpleegafdeling Dagverpleging", 
+                      "Verpleegafdeling Psychiatrie", "Verpleegafdeling T4", "dagbehandeling 2e etage", "verpleegafdeling Boomhut", "Ok Recovery Calamiteiten hospitaal" )
+
+# Remove rows where the specified column has any of the values to exclude
+Patient_movements2 <- subset( Patient_movements1.bezwaar, !( hos_mut_afd_Omschrijving %in% wards_to_exclude )) # removes 141541 rows
+
+# note that these wards were removed after the steps below, because too many patients were removed during these steps and the wards had very little patient admissions <10
+wards_to_exclude2 <- c( "Dagbehandeling Interne Geneeskunde", "Dagbehandeling Hematologie/VCK", "Dagbehandeling Nefrologie",
+                      "Dagbehandeling Geriatrie", "Dagbehandeling Urologie B3-Oost", "COHORT afdeling D3-Oost",
+                      "Afdeling Neonatologie, Specialisme COU F312", "Afdeling Neonatologie, Specialisme COU F310", "Opname SEH", 
+                      "Dagbehandeling Pijn", "OK WKZ lokatie Recovery verpl" )
+
+# Remove rows where the specified column has any of the values to exclude
+Patient_movements2 <- subset( Patient_movements2, !( hos_mut_afd_Omschrijving %in% wards_to_exclude2 )) # removes 141541 rows
+```
+
+## Remove pseudo or failed attemt movements
+
+It could be that some patient movements in the datasets were not physical movements, but represented administrative events, when a patient received treatment from another department (e.g. dialysis), while staying in the same place or when a movement attempt failed, but the bed was already reserved. We remove rows that indicate very short movements (<4h).
+
+```{r pseudo movements}
+# The getTZ function returns the timezone values stored in local package environment, and set at package load time. Also note that this argument applies to the output: the returned object will have this timezone set. The timezone is not used for the parsing which will always be to localtime, or to UTC is the asUTC variable is set
+Patient_movements2$hos_mut_start_dt <- anytime( Patient_movements2$hos_mut_start_dt, asUTC = TRUE )
+Patient_movements2$hos_mut_stop_dt <- anytime( Patient_movements2$hos_mut_stop_dt, asUTC = TRUE )
+
+# Calculate the time difference in hours
+time_difference <- as.numeric( difftime(Patient_movements2$hos_mut_stop_dt, Patient_movements2$hos_mut_start_dt, units = "hours" ))
+
+# Keep only rows where the time difference is greater than or equal to 4 hours
+# when >= 2 is used 67711 rows are removed 
+Patient_movements3 <- Patient_movements2[ time_difference >= 4, ] 
+
+# Remove rows where hos_mut_Afd_code is NA
+Patient_movements3 <- Patient_movements3[ complete.cases( Patient_movements3$hos_mut_Afd_code ), ]
+```
+
+
+## Merge movements that indicate transfers within wards
+
+Note that the script below only merges consecutive movements within wards, if a patient moves back to a previous ward after being at another ward, this information is kept. 
+
+```{r merge data without movemements}
+# Convert date columns to Date objects
+Patient_movements4 <- Patient_movements3 %>%
+  mutate(
+    hos_start_dt = as.POSIXct( hos_start_dt ),
+    hos_stop_dt = as.POSIXct( hos_stop_dt ),
+    hos_mut_start_dt = as.POSIXct( hos_mut_start_dt ),
+    hos_mut_stop_dt = as.POSIXct( hos_mut_stop_dt )
+  )
+
+# Create a grouping variable based on changes in specified columns
+Patient_movements4 <- Patient_movements4 %>%
+  mutate(group_id = rleid(
+    studyId_outbreakdetec_Patient,
+    studyId_outbreakdetec_Hos_ID,
+    hos_start_dt,
+    hos_stop_dt,
+    hos_mut_specialism,
+    hos_mut_Afd_code,
+    hos_mut_afd_Omschrijving
+  ))
+
+# Merge consecutive rows within the same ward
+# Keep the earliest date of "hos_mut_start_dt" and the eldest date of "hos_mut_stop_dt"
+Patient_movements4_merged <- Patient_movements4 %>%
+  group_by( group_id ) %>%
+  summarise(
+    studyId_outbreakdetec_Patient = first( studyId_outbreakdetec_Patient ),
+    studyId_outbreakdetec_Hos_ID = first( studyId_outbreakdetec_Hos_ID ),
+    hos_start_dt = first( hos_start_dt ),
+    hos_stop_dt = first( hos_stop_dt ),
+    hos_mut_specialism = first( hos_mut_specialism ),
+    hos_mut_Afd_code = first( hos_mut_Afd_code ),
+    hos_mut_afd_Omschrijving = first( hos_mut_afd_Omschrijving ),
+    hos_mut_start_dt = min( hos_mut_start_dt ),
+    hos_mut_stop_dt = max( hos_mut_stop_dt )
+  ) %>%
+  ungroup()
+
+# Remove the group_id column
+Patient_movements4_merged <- select( Patient_movements4_merged, -group_id ) 
+
+# Calculate the average number of transfers per studyId_outbreakdetec_Hos_ID
+average_transfers <- Patient_movements4_merged %>%
+  group_by(studyId_outbreakdetec_Hos_ID) %>%
+  summarise(transfers = n()) %>%
+  summarise(avg_transfers = mean(transfers))
+```
+
+## Remove patients without movements
+
+```{r filter the data of patients without movements}
+# Filter patients with more than one row
+Patient_movements4_filtered <- Patient_movements4_merged %>%
+  group_by( studyId_outbreakdetec_Hos_ID ) %>% # use hospital ID, because patients can be admitted multiple times without movements per admission
+  filter( n() > 1 ) %>%
+  ungroup() 
+# Now, Patient_movements4_filtered contains the data with patients having more than one row/ movement
+
+# Sort the data (rows)
+Patient_movements4_filtered <- Patient_movements4_filtered %>% 
+   arrange( studyId_outbreakdetec_Patient, studyId_outbreakdetec_Hos_ID, hos_start_dt, hos_stop_dt, hos_mut_start_dt, hos_mut_stop_dt )
+
+# Filter patients with more than one row
+Patient_movements5 <- Patient_movements4_filtered %>%
+  group_by( studyId_outbreakdetec_Patient ) %>% # use hospital ID, because patients can be admitted multiple times without movements per admission
+  filter( n() > 1 ) %>%
+  ungroup() 
+# Now, Patient_movements5 contains the data with patients having more than one row/ movement
+
+# Sort the data (rows)
+Patient_movements5 <- Patient_movements5 %>% 
+   arrange( studyId_outbreakdetec_Patient, studyId_outbreakdetec_Hos_ID, hos_start_dt, hos_stop_dt, hos_mut_start_dt, hos_mut_stop_dt )
+```
+## The networks for WKZ and UMC seperate
+
+We first make a network of data from 2019 as a base case.
+
+```{r separate, message=FALSE}
+# Split data based on hos_mut_Afd_code
+subset_df_2019_split <- Patient_movements5 %>%
+  filter(year(hos_start_dt) == 2019) %>%
+  mutate(
+    group_category = case_when(
+      grepl("^I", hos_mut_Afd_code) ~ "Group1",
+      grepl("^F", hos_mut_Afd_code) & hos_mut_Afd_code != "F320" ~ "Group1",
+      hos_mut_Afd_code == "Z350" ~ "Group1",
+      TRUE ~ "Rest"
+    )
+  )
+
+# Extract the subset of columns for the graph
+subset_df_WKZ <- subset_df_2019_split %>%
+  filter(group_category == "Group1") %>%
+  select(studyId_outbreakdetec_Hos_ID, hos_mut_afd_Omschrijving) #hos_mut_Afd_code
+
+subset_df_UMCU <- subset_df_2019_split %>%
+  filter(group_category == "Rest") %>%
+  select(studyId_outbreakdetec_Hos_ID, hos_mut_afd_Omschrijving) # hos_mut_Afd_code
+
+```
+
+```{r seperate 2, message=FALSE}
+#subset_df_2019 <- Patient_movements5 
+subset_df <- subset_df_UMCU[ , c( "studyId_outbreakdetec_Hos_ID", "hos_mut_afd_Omschrijving" )] #"hos_mut_Afd_code"
+
+subset_df <- subset_df %>% 
+   arrange( studyId_outbreakdetec_Hos_ID )
+
+# Create an edge list based on patient transfers between 'hos_mut_specialism'
+edges <- subset_df %>%
+  group_by( studyId_outbreakdetec_Hos_ID ) %>%
+  mutate( previous_hos_mut_Afd_Omschrijving = lag( hos_mut_afd_Omschrijving )) %>% # hos_mut_Afd_code
+  filter( !is.na(previous_hos_mut_Afd_Omschrijving) & hos_mut_afd_Omschrijving != previous_hos_mut_Afd_Omschrijving ) %>% # previous_hos_mut_Afd_code, hos_mut_Afd_code
+  select( from = previous_hos_mut_Afd_Omschrijving, to = hos_mut_afd_Omschrijving ) %>% # hos_mut_Afd_code
+  ungroup()
+
+edges <- edges %>% 
+   arrange( studyId_outbreakdetec_Hos_ID )
+
+# select second and third column
+edges <- edges[ , c( 2:3 )]
+
+# merge similar edges and add weight
+edges2 <- edges %>%
+  group_by( from, to ) %>%
+  summarise( weight = n() ) %>%
+  ungroup()
+
+# Order edges2 based on weight
+edges2 <- edges2 %>%
+  arrange(weight)
+```
+
+See ?layout for different possible graph layouts.
+
+The Louvain method is a modularity-based community detection algorithm for graphs. It's a divisive or top-down algorithm, meaning that it doesn't build up clusters by merging nodes (agglomerative), but rather it starts with each node as its own community and iteratively merges nodes into communities to optimize a quality function, in this case, modularity. The Louvain method is known for its efficiency in detecting communities in large-scale networks and has been widely used in various fields for analyzing complex systems.
+
+```{r graph with communities 2, message=FALSE, warning=FALSE}
+# Create an undirected graph from the edge list
+undirected_graph <- graph.data.frame( edges2, directed = FALSE )
+
+# Calculate node degree and weighted degree
+node_degrees <- degree( undirected_graph )
+weighted_node_degrees <- strength( undirected_graph )
+# Scale weights to an appropriate range for node sizes
+scaled_weights <- scales::rescale( weighted_node_degrees, to = c( 10, 50 ))
+# Calculate edge thickness based on the weight
+edge_thickness <- edges2$weight
+# Identify the top 5 edges with the highest weight
+top_edges <- edges2[ order( edges2$weight, decreasing = TRUE ), ][ 1:5, ]
+
+# Function to scale and map weights to colors
+map_weights_to_colors <- function(weights) {
+  color_palette <- colorRampPalette(brewer.pal(5, "YlOrRd")) #c("blue", "red"))  # Define the color gradient
+  scaled_weights <- scales::rescale(weights)  # Scale weights to [0, 1]
+  colors <- color_palette(length(scaled_weights))[findInterval(scaled_weights, seq(0, 1, length.out = length(scaled_weights)))]
+  return(colors)
+}
+
+# Get edge weights and colors
+edge_weights <- E(undirected_graph)$weight
+edge_colors <- map_weights_to_colors(edge_weights)
+
+adj.matrix = get.adjacency(undirected_graph,  attr = "weight", sparse = FALSE)
+
+##################################################################################
+
+##################################################################################
+
+# Use the Louvain method for community detection
+set.seed(25)
+communities <- cluster_louvain(undirected_graph)
+membership <- membership(communities)
+
+# Order the named vector based on values
+membership.vector <- membership[ order( membership )]
+# Print the ordered named vector
+print( membership )
+
+# Sort nodes within each community based on node degree
+sorted_nodes <- lapply( unique( membership ), function( community ) { # use membership for louvain
+  community_nodes <- which( membership == community ) # use membership for louvain
+  node_degrees_community <- node_degrees[ community_nodes ]
+  community_nodes[ order( node_degrees_community, decreasing = TRUE )]
+})
+
+# Combine the sorted nodes into a single vector
+sorted_nodes <- unlist( sorted_nodes )
+
+# Manually adjust the positions in a circular layout, placing members of the same community next to each other
+layout <- layout_in_circle( undirected_graph, order = sorted_nodes )
+#layout <- layout_with_kk( undirected_graph, weights = edges2$weight**-0.3 )
+#layout <- layout_with_fr( undirected_graph )
+
+# Plot the graph with community colors, node size, and edge thickness
+plot(
+  undirected_graph,
+  layout = layout,
+  vertex.color = membership, # use membership for louvain
+  vertex.size = scaled_weights**0.75,
+  #edge.color = ifelse( paste( edges2$from, edges2$to ) %in% paste( top_edges$from, top_edges$to ), "red", "grey" ),
+  #edge.width = ifelse( paste( edges2$from, edges2$to ) %in% paste( top_edges$from, top_edges$to ), 8, 1 ),
+  edge.width = edge_thickness**0.5,
+  edge.color = adjustcolor(edge_colors),#, alpha.f = 0.8),  # Set edge colors
+  main = "Community Structure",
+  edge.alpha = 0.1
+)
+
+```
+
+```{r differences per year 2, message=FALSE, warning=FALSE}
+# Split data based on hos_mut_Afd_code
+subset_df_split <- Patient_movements5 %>%
+  #filter(year(hos_start_dt) == 2019) %>%
+  mutate(
+    group_category = case_when(
+      grepl("^I", hos_mut_Afd_code) ~ "Group1",
+      grepl("^F", hos_mut_Afd_code) & hos_mut_Afd_code != "F320" ~ "Group1",
+      hos_mut_Afd_code == "Z350" ~ "Group1",
+      TRUE ~ "Rest"
+    )
+  )
+
+# Extract the subset of columns for the graph
+subset_df_WKZ <- subset_df_split %>%
+  filter(group_category == "Group1") 
+
+subset_df_UMCU <- subset_df_split %>%
+  filter(group_category == "Rest") 
+
+data.choice <- subset_df_UMCU
+  
+# Function to create a graph and extract communities
+get_communities <- function( data, years, optimal_k ) {
+  # Filter data for the base case year
+  subset_df <- data %>% filter( year( hos_start_dt ) == years)
+
+  # Extract the subset of columns for the graph
+  subset_df <- subset_df[ , c( "studyId_outbreakdetec_Hos_ID", "hos_mut_Afd_code" )]
+
+  subset_df <- subset_df %>% arrange( studyId_outbreakdetec_Hos_ID )
+
+  # Create an edge list based on patient transfers between 'hos_mut_specialism'
+  edges <- subset_df %>%
+    group_by( studyId_outbreakdetec_Hos_ID ) %>%
+    mutate( previous_hos_mut_Afd_code = lag( hos_mut_Afd_code )) %>%
+    filter( !is.na(previous_hos_mut_Afd_code ) & hos_mut_Afd_code != previous_hos_mut_Afd_code ) %>%
+    select( from = previous_hos_mut_Afd_code, to = hos_mut_Afd_code ) %>%
+    ungroup()
+
+  edges <- edges %>% arrange( studyId_outbreakdetec_Hos_ID )
+
+  # Select the second and third column
+  edges <- edges[ , c( 2, 3 )]
+
+  # Merge similar edges and add weight
+  edges2 <- edges %>%
+    group_by( from, to ) %>%
+    summarise( weight = n() ) %>%
+    ungroup()
+
+  # Create an undirected graph from the edge list
+  undirected_graph <- graph.data.frame( edges2, directed = FALSE )
+  
+  # Use the kmeans clustering
+  set.seed(25)
+  
+  # Use the Louvain method for community detection
+  communities <- cluster_louvain( undirected_graph )
+  return( membership( communities ))
+}
+
+# Create a list to store community memberships for each year
+#community_list <- lapply( 2014:2021, function( years ) get_communities( data.choice, years ))
+set.seed(25)
+community_list <- lapply(2014:2021, function(years) 
+  get_communities(data.choice, years, optimal_k_values[years - 2013]))
+
+# Function to create communities for the entire dataset
+get_communities_all_years <- function(data) {
+  subset_df <- data[, c("studyId_outbreakdetec_Hos_ID", "hos_mut_Afd_code")]
+  subset_df <- subset_df %>% arrange(studyId_outbreakdetec_Hos_ID)
+
+  edges <- subset_df %>%
+    group_by(studyId_outbreakdetec_Hos_ID) %>%
+    mutate(previous_hos_mut_Afd_code = lag(hos_mut_Afd_code)) %>%
+    filter(!is.na(previous_hos_mut_Afd_code) & hos_mut_Afd_code != previous_hos_mut_Afd_code) %>%
+    select(from = previous_hos_mut_Afd_code, to = hos_mut_Afd_code) %>%
+    ungroup()
+
+  edges <- edges %>% arrange(studyId_outbreakdetec_Hos_ID)
+
+  edges <- edges[, c(2, 3)]
+
+  edges2 <- edges %>%
+    group_by(from, to) %>%
+    summarise(weight = n()) %>%
+    ungroup()
+
+  undirected_graph <- graph.data.frame(edges2, directed = FALSE)
+
+  # use the kmeans clustering
+  set.seed(25)
+  
+  communities <- cluster_louvain(undirected_graph)
+  return(membership(communities))
+} 
+
+# Create community memberships for the entire dataset
+all_years_communities <- get_communities_all_years(data.choice)
+
+# Extract node names (wards)
+nodes <- unique( c( data.choice$hos_mut_Afd_code ))
+
+# Create a data frame to store the results
+result_df <- data.frame( Ward = character(), stringsAsFactors = FALSE )
+
+# Compare community memberships for each ward across years
+for ( ward in nodes ) {
+  ward_result <- data.frame( Ward = ward, stringsAsFactors = FALSE )
+  for ( i in 1:length( community_list )) {
+    ward_result[[ as.character( 2014 + i - 1 )]] <- community_list[[ i ]][ ward ]
+  }
+  result_df <- rbind( result_df, ward_result )
+}
+
+result_df <- result_df[ order( result_df$Ward ), ]
+# Append the column for clusters made over all years to each corresponding row
+result_df$AllYears <- all_years_communities[result_df$Ward]
+# Reorder the columns, placing 'AllYears' as the first column
+result_df <- result_df[c("Ward", "AllYears", colnames(result_df)[!colnames(result_df) %in% c("Ward", "AllYears")])]
+
+# Melt the data frame for easier plotting
+melted_result.UMCU <- reshape2::melt( result_df, id.vars = "Ward", variable.name = "Year", value.name = "Community" )
+
+# Define a color palette with n distinct colors
+community_colors <- viridis( 6, option = "D" )
+# palette1 <- brewer.pal(8, "Set1")
+# palette2 <- brewer.pal(8, "Set2")
+# community_colors <- c(palette1, palette2)
+
+# Create a mapping between hos_mut_Afd_code and hos_mut_afd_Omschrijving
+code_to_description <- unique(data.choice[, c("hos_mut_Afd_code", "hos_mut_afd_Omschrijving")])
+
+# Replace the 'Ward' column values in the melted result with the corresponding descriptions
+melted_result.UMCU$Ward <- code_to_description$hos_mut_afd_Omschrijving[match(melted_result.UMCU$Ward, code_to_description$hos_mut_Afd_code)]
+
+# Define a color palette with n distinct colors
+community_colors <- viridis(6, option = "D")
+
+# Plot a heatmap with the updated y-axis labels
+ggplot(melted_result.UMCU, aes(x = Year, y = Ward, fill = factor(Community))) +
+  geom_tile(color = "white") +
+  scale_fill_manual(values = community_colors) +  # Use the defined color palette
+  theme_bw() +
+  labs(title = "Community Memberships Over Years", x = "Year", y = "Ward Description", fill = "Community") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 20))
+```
+
+```{r differences per year 3, message=FALSE, warning=FALSE}
+# Split data based on hos_mut_Afd_code
+subset_df_split <- Patient_movements5 %>%
+  #filter(year(hos_start_dt) == 2019) %>%
+  mutate(
+    group_category = case_when(
+      grepl("^I", hos_mut_Afd_code) ~ "Group1",
+      grepl("^F", hos_mut_Afd_code) & hos_mut_Afd_code != "F320" ~ "Group1",
+      hos_mut_Afd_code == "Z350" ~ "Group1",
+      TRUE ~ "Rest"
+    )
+  )
+
+# Extract the subset of columns for the graph
+subset_df_WKZ <- subset_df_split %>%
+  filter(group_category == "Group1") 
+
+subset_df_UMCU <- subset_df_split %>%
+  filter(group_category == "Rest") 
+
+data.choice <- subset_df_WKZ
+  
+# Function to create a graph and extract communities
+get_communities <- function( data, years, optimal_k ) {
+  # Filter data for the base case year
+  subset_df <- data %>% filter( year( hos_start_dt ) == years)
+
+  # Extract the subset of columns for the graph
+  subset_df <- subset_df[ , c( "studyId_outbreakdetec_Hos_ID", "hos_mut_Afd_code" )]
+
+  subset_df <- subset_df %>% arrange( studyId_outbreakdetec_Hos_ID )
+
+  # Create an edge list based on patient transfers between 'hos_mut_specialism'
+  edges <- subset_df %>%
+    group_by( studyId_outbreakdetec_Hos_ID ) %>%
+    mutate( previous_hos_mut_Afd_code = lag( hos_mut_Afd_code )) %>%
+    filter( !is.na(previous_hos_mut_Afd_code ) & hos_mut_Afd_code != previous_hos_mut_Afd_code ) %>%
+    select( from = previous_hos_mut_Afd_code, to = hos_mut_Afd_code ) %>%
+    ungroup()
+
+  edges <- edges %>% arrange( studyId_outbreakdetec_Hos_ID )
+
+  # Select the second and third column
+  edges <- edges[ , c( 2, 3 )]
+
+  # Merge similar edges and add weight
+  edges2 <- edges %>%
+    group_by( from, to ) %>%
+    summarise( weight = n() ) %>%
+    ungroup()
+
+  # Create an undirected graph from the edge list
+  undirected_graph <- graph.data.frame( edges2, directed = FALSE )
+  
+  # Use the kmeans clustering
+  set.seed(25)
+  
+  # Use the Louvain method for community detection
+  communities <- cluster_louvain( undirected_graph )
+  return( membership( communities ))
+}
+
+# Create a list to store community memberships for each year
+#community_list <- lapply( 2014:2021, function( years ) get_communities( data.choice, years ))
+set.seed(25)
+community_list <- lapply(2014:2021, function(years) get_communities(data.choice, years, optimal_k_values[years - 2013]))
+
+# Function to create communities for the entire dataset
+get_communities_all_years <- function(data) {
+  subset_df <- data[, c("studyId_outbreakdetec_Hos_ID", "hos_mut_Afd_code")]
+  subset_df <- subset_df %>% arrange(studyId_outbreakdetec_Hos_ID)
+
+  edges <- subset_df %>%
+    group_by(studyId_outbreakdetec_Hos_ID) %>%
+    mutate(previous_hos_mut_Afd_code = lag(hos_mut_Afd_code)) %>%
+    filter(!is.na(previous_hos_mut_Afd_code) & hos_mut_Afd_code != previous_hos_mut_Afd_code) %>%
+    select(from = previous_hos_mut_Afd_code, to = hos_mut_Afd_code) %>%
+    ungroup()
+
+  edges <- edges %>% arrange(studyId_outbreakdetec_Hos_ID)
+
+  edges <- edges[, c(2, 3)]
+
+  edges2 <- edges %>%
+    group_by(from, to) %>%
+    summarise(weight = n()) %>%
+    ungroup()
+
+  undirected_graph <- graph.data.frame(edges2, directed = FALSE)
+
+  # use the kmeans clustering
+  set.seed(25)
+  
+  communities <- cluster_louvain(undirected_graph)
+  return(membership(communities))
+} 
+
+# Create community memberships for the entire dataset
+all_years_communities <- get_communities_all_years(data.choice)
+
+# Extract node names (wards)
+nodes <- unique( c( data.choice$hos_mut_Afd_code ))
+
+# Create a data frame to store the results
+result_df <- data.frame( Ward = character(), stringsAsFactors = FALSE )
+
+# Compare community memberships for each ward across years
+for ( ward in nodes ) {
+  ward_result <- data.frame( Ward = ward, stringsAsFactors = FALSE )
+  for ( i in 1:length( community_list )) {
+    ward_result[[ as.character( 2014 + i - 1 )]] <- community_list[[ i ]][ ward ]
+  }
+  result_df <- rbind( result_df, ward_result )
+}
+
+result_df <- result_df[ order( result_df$Ward ), ]
+# Append the column for clusters made over all years to each corresponding row
+result_df$AllYears <- all_years_communities[result_df$Ward]
+# Reorder the columns, placing 'AllYears' as the first column
+result_df <- result_df[c("Ward", "AllYears", colnames(result_df)[!colnames(result_df) %in% c("Ward", "AllYears")])]
+
+# Melt the data frame for easier plotting
+melted_result.WKZ <- reshape2::melt( result_df, id.vars = "Ward", variable.name = "Year", value.name = "Community" )
+
+# Define a color palette with n distinct colors
+community_colors <- viridis( 6, option = "D" )
+# palette1 <- brewer.pal(8, "Set1")
+# palette2 <- brewer.pal(8, "Set2")
+# community_colors <- c(palette1, palette2)
+
+# Create a mapping between hos_mut_Afd_code and hos_mut_afd_Omschrijving
+code_to_description <- unique(data.choice[, c("hos_mut_Afd_code", "hos_mut_afd_Omschrijving")])
+
+# Replace the 'Ward' column values in the melted result with the corresponding descriptions
+melted_result.WKZ$Ward <- code_to_description$hos_mut_afd_Omschrijving[match(melted_result.WKZ$Ward, code_to_description$hos_mut_Afd_code)]
+
+# Define a color palette with n distinct colors
+community_colors <- viridis(6, option = "D")
+
+# Plot a heatmap with the updated y-axis labels
+ggplot(melted_result.WKZ, aes(x = Year, y = Ward, fill = factor(Community))) +
+  geom_tile(color = "white") +
+  scale_fill_manual(values = community_colors) +  # Use the defined color palette
+  theme_bw() +
+  labs(title = "Community Memberships Over Years", x = "Year", y = "Ward Description", fill = "Community") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 20))
+```
+
+```{r make the data for later, message=FALSE}
+melted_result.UMCU$Hospital <- "UMCU"
+melted_result.WKZ$Hospital <- "WKZ"
+
+Louvain.cluster.results <- rbind(melted_result.UMCU, melted_result.WKZ)
+
+# Save the data
+write.table(
+  Louvain.cluster.results,
+  file = here("Patient_movements", "Data", "Louvain.cluster.results.csv"),
+  sep = ";",
+  row.names = FALSE
+)
+```
+
+
