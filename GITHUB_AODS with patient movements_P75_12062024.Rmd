@@ -7,6 +7,11 @@ html_document:
 author: "Susanne Pinto"
 date: "2025-05"
 title: "P75 with patient movements"
+output:
+  github_document: default
+  word_document: default
+  pdf_document: default
+  html_document: default
 ---
 
 ```{r setup, include=FALSE}
