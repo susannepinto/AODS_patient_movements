@@ -1,25 +1,11 @@
----
-title: "Louvian clusters on hospital network"
-author: "Susanne Pinto"
-date: "2025-05"
-output:
-  github_document: default
-  word_document: default
-  pdf_document: default
-  html_document: default
----
-
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
-```
-
-```{r environment, include=FALSE}
-rm( list = ls() ) # remove working environment
-```
+Louvian clusters on hospital network
+================
+Susanne Pinto
+2025-05
 
 ## Load the packages
 
-```{r packages, message=FALSE}
+``` r
 library( here )
 library( tidyverse ) 
 library( haven ) # to import SAS en spss files
@@ -39,14 +25,9 @@ library( RColorBrewer ) # palette
 library( gplots ) # for heatmap
 ```
 
-
 ## Load the data
 
-```{r data patient movements, echo=FALSE}
-Patient_movements <- read_sas("~/Library/CloudStorage/OneDrive-VrijeUniversiteitAmsterdam/Documents/UMC Utrecht/Manuscript patient verplaatsingen/Analyses/Patient_movements/Data/opnames_pseudo20230725.sas7bdat")
-```
-
-```{r load data}
+``` r
 # Read in the opname data
 #Patient_movements <- read_sas(here( "Patient_movements", "Data", "opnames_pseudo20230725.sas7bdat"))
 
@@ -58,16 +39,20 @@ Patient_movements1 <- Patient_movements %>%
    arrange( studyId_outbreakdetec_Patient, studyId_outbreakdetec_Hos_ID, hos_start_dt, hos_stop_dt, hos_mut_start_dt, hos_mut_stop_dt )
 ```
 
+## Use ‘voorkeurs’ PatientID
 
-## Use 'voorkeurs' PatientID
+Some patients have more patientIDs. The way in which hospitalizations in
+these datasets are linked to patient IDs ensures that a unique
+hospitalization ID is associated with all patient IDs known for a unique
+patient, thereby increasing the count for a unique hospitalization by
+the number of known patient IDs.The file “voorkeurs_id.sas7bdat”
+contains all studyId_outbreakdetec_Patient entries that are not based on
+the preferred ID, along with a column named
+“studyId_outbreakdetec_Pat_voork.” This is the pseudo ID created for the
+study that takes precedence. Delete the rows that have the same
+studyId_outbreakdetec_Patient as those in this file.
 
-Some patients have more patientIDs. The way in which hospitalizations in these datasets are linked to patient IDs ensures that a unique hospitalization ID is associated with all patient IDs known for a unique patient, thereby increasing the count for a unique hospitalization by the number of known patient IDs.The file "voorkeurs_id.sas7bdat" contains all studyId_outbreakdetec_Patient entries that are not based on the preferred ID, along with a column named "studyId_outbreakdetec_Pat_voork." This is the pseudo ID created for the study that takes precedence. Delete the rows that have the same studyId_outbreakdetec_Patient as those in this file.
-
-```{r data preferredID, echo=FALSE}
-preferredID <- read_sas("~/Library/CloudStorage/OneDrive-VrijeUniversiteitAmsterdam/Documents/UMC Utrecht/Manuscript patient verplaatsingen/Analyses/Patient_movements/Data/voorkeurs_id.sas7bdat")
-```
-
-```{r voorkeurs data}
+``` r
 # Read in the voorkeurs data
 #preferredID <- read_sas(here("Patient_movements", "Data", "voorkeurs_id.sas7bdat"))
 
@@ -84,16 +69,15 @@ Patient_movements1.filtered <- Patient_movements1 %>%
 rm( preferredID )
 ```
 
-
 ## Remove bezwaar patients
 
-This dataset contains the objection of contributing to research etc. First remove the rows for people without objection, then create new variables and give them a value of 1 (bezwaar) or 0 (geen bezwaar). The people have the option of different catagories to which they can object, here if any of the categories was checked we counted it as an objection.
+This dataset contains the objection of contributing to research etc.
+First remove the rows for people without objection, then create new
+variables and give them a value of 1 (bezwaar) or 0 (geen bezwaar). The
+people have the option of different catagories to which they can object,
+here if any of the categories was checked we counted it as an objection.
 
-```{r data bezwaar, echo=FALSE}
-bezwaar <- read_sas("~/Library/CloudStorage/OneDrive-VrijeUniversiteitAmsterdam/Documents/UMC Utrecht/Manuscript patient verplaatsingen/Analyses/Patient_movements/Data/bezwaar_umc.sas7bdat")
-```
-
-```{r bezwaar data, message=FALSE}
+``` r
 #bezwaar <- read_sas(here("Patient_movements", "Data", "bezwaar_umc.sas7bdat"))
 
 # Date of objection
@@ -152,12 +136,16 @@ Patient_movements1.bezwaar <- Patient_movements1.bezwaar[ !( Patient_movements1.
 rm( bezwaar, bezwaar1, bezwaar2, bezwaar3 )
 ```
 
-
 ## Departments
 
-There are many departments, this will make the network unnecessary large and difficult to interpret. Some departments can be removed such as the psychiatric departments, departments of the CHM (military hospital, which should not be included), departments of the emergency hospital, departments with very few admissions (= 1), and a few scattered PMC departments. 
+There are many departments, this will make the network unnecessary large
+and difficult to interpret. Some departments can be removed such as the
+psychiatric departments, departments of the CHM (military hospital,
+which should not be included), departments of the emergency hospital,
+departments with very few admissions (= 1), and a few scattered PMC
+departments.
 
-```{r departments}
+``` r
 # The rows (i.e. departments) I want to exclude, the wards we exclude are: 
 # Psychiatric departments
 # Departments of the CHM (military hospital, also not included in the study)
@@ -188,9 +176,14 @@ Patient_movements2 <- subset( Patient_movements2, !( hos_mut_afd_Omschrijving %i
 
 ## Remove pseudo or failed attemt movements
 
-It could be that some patient movements in the datasets were not physical movements, but represented administrative events, when a patient received treatment from another department (e.g. dialysis), while staying in the same place or when a movement attempt failed, but the bed was already reserved. We remove rows that indicate very short movements (<4h).
+It could be that some patient movements in the datasets were not
+physical movements, but represented administrative events, when a
+patient received treatment from another department (e.g. dialysis),
+while staying in the same place or when a movement attempt failed, but
+the bed was already reserved. We remove rows that indicate very short
+movements (\<4h).
 
-```{r pseudo movements}
+``` r
 # The getTZ function returns the timezone values stored in local package environment, and set at package load time. Also note that this argument applies to the output: the returned object will have this timezone set. The timezone is not used for the parsing which will always be to localtime, or to UTC is the asUTC variable is set
 Patient_movements2$hos_mut_start_dt <- anytime( Patient_movements2$hos_mut_start_dt, asUTC = TRUE )
 Patient_movements2$hos_mut_stop_dt <- anytime( Patient_movements2$hos_mut_stop_dt, asUTC = TRUE )
@@ -206,12 +199,13 @@ Patient_movements3 <- Patient_movements2[ time_difference >= 4, ]
 Patient_movements3 <- Patient_movements3[ complete.cases( Patient_movements3$hos_mut_Afd_code ), ]
 ```
 
-
 ## Merge movements that indicate transfers within wards
 
-Note that the script below only merges consecutive movements within wards, if a patient moves back to a previous ward after being at another ward, this information is kept. 
+Note that the script below only merges consecutive movements within
+wards, if a patient moves back to a previous ward after being at another
+ward, this information is kept.
 
-```{r merge data without movemements}
+``` r
 # Convert date columns to Date objects
 Patient_movements4 <- Patient_movements3 %>%
   mutate(
@@ -262,7 +256,7 @@ average_transfers <- Patient_movements4_merged %>%
 
 ## Remove patients without movements
 
-```{r filter the data of patients without movements}
+``` r
 # Filter patients with more than one row
 Patient_movements4_filtered <- Patient_movements4_merged %>%
   group_by( studyId_outbreakdetec_Hos_ID ) %>% # use hospital ID, because patients can be admitted multiple times without movements per admission
@@ -285,11 +279,12 @@ Patient_movements5 <- Patient_movements4_filtered %>%
 Patient_movements5 <- Patient_movements5 %>% 
    arrange( studyId_outbreakdetec_Patient, studyId_outbreakdetec_Hos_ID, hos_start_dt, hos_stop_dt, hos_mut_start_dt, hos_mut_stop_dt )
 ```
+
 ## The networks for WKZ and UMC seperate
 
 We first make a network of data from 2019 as a base case.
 
-```{r separate, message=FALSE}
+``` r
 # Split data based on hos_mut_Afd_code
 subset_df_2019_split <- Patient_movements5 %>%
   filter(year(hos_start_dt) == 2019) %>%
@@ -310,10 +305,9 @@ subset_df_WKZ <- subset_df_2019_split %>%
 subset_df_UMCU <- subset_df_2019_split %>%
   filter(group_category == "Rest") %>%
   select(studyId_outbreakdetec_Hos_ID, hos_mut_afd_Omschrijving) # hos_mut_Afd_code
-
 ```
 
-```{r seperate 2, message=FALSE}
+``` r
 #subset_df_2019 <- Patient_movements5 
 subset_df <- subset_df_UMCU[ , c( "studyId_outbreakdetec_Hos_ID", "hos_mut_afd_Omschrijving" )] #"hos_mut_Afd_code"
 
@@ -347,9 +341,16 @@ edges2 <- edges2 %>%
 
 See ?layout for different possible graph layouts.
 
-The Louvain method is a modularity-based community detection algorithm for graphs. It's a divisive or top-down algorithm, meaning that it doesn't build up clusters by merging nodes (agglomerative), but rather it starts with each node as its own community and iteratively merges nodes into communities to optimize a quality function, in this case, modularity. The Louvain method is known for its efficiency in detecting communities in large-scale networks and has been widely used in various fields for analyzing complex systems.
+The Louvain method is a modularity-based community detection algorithm
+for graphs. It’s a divisive or top-down algorithm, meaning that it
+doesn’t build up clusters by merging nodes (agglomerative), but rather
+it starts with each node as its own community and iteratively merges
+nodes into communities to optimize a quality function, in this case,
+modularity. The Louvain method is known for its efficiency in detecting
+communities in large-scale networks and has been widely used in various
+fields for analyzing complex systems.
 
-```{r graph with communities 2, message=FALSE, warning=FALSE}
+``` r
 # Create an undirected graph from the edge list
 undirected_graph <- graph.data.frame( edges2, directed = FALSE )
 
@@ -390,7 +391,80 @@ membership <- membership(communities)
 membership.vector <- membership[ order( membership )]
 # Print the ordered named vector
 print( membership )
+```
 
+    ##                                     C.C.U. Cardiologie 
+    ##                                                      1 
+    ##                         Dagbehand. Longziekten Kliniek 
+    ##                                                      2 
+    ##           Dagbehandeling Allergologie/MDL/Reumatologie 
+    ##                                                      3 
+    ##                                     Dagbehandeling HCK 
+    ##                                                      1 
+    ##                               Dagbehandeling Oncologie 
+    ##                                                      3 
+    ##                                             IC-Centrum 
+    ##                                                      2 
+    ##                                   Medium Care DHS/DIGD 
+    ##                                                      3 
+    ##   Medium Care Neurologie & Neurochirurgie - D3 West MC 
+    ##                                                      4 
+    ##               Onderzoek en Behandeling Scopie D.I.G.D. 
+    ##                                                      3 
+    ##                                         Recovery F0/F4 
+    ##                                                      5 
+    ##                   Research Neurologie & Neurochirurgie 
+    ##                                                      4 
+    ##                                Stralingsunit Oncologie 
+    ##                                                      5 
+    ##                               Verpleegafdeling B3-Oost 
+    ##                                                      5 
+    ##                                Verpleegafdeling C2West 
+    ##                                                      3 
+    ##                               Verpleegafdeling D2-Oost 
+    ##                                                      3 
+    ##             Verpleegafdeling Dermatologie/Allergologie 
+    ##                                                      3 
+    ##                             Verpleegafdeling Geriatrie 
+    ##                                                      3 
+    ##                  Verpleegafdeling Gynaecologie C5-West 
+    ##                                                      5 
+    ##                           Verpleegafdeling Hematologie 
+    ##                                                      3 
+    ##                   Verpleegafdeling Interne Geneeskunde 
+    ##                                                      3 
+    ## Verpleegafdeling Neurologie & Neurochirurgie - C3 Oost 
+    ##                                                      5 
+    ## Verpleegafdeling Neurologie & Neurochirurgie - C3 West 
+    ##                                                      4 
+    ## Verpleegafdeling Neurologie & Neurochirurgie - D3 West 
+    ##                                                      4 
+    ##                             Verpleegafdeling Oncologie 
+    ##                                                      3 
+    ##        Verpleegafdeling Reumatologie/Klin. Immunologie 
+    ##                                                      3 
+    ##                    verpleegafdeling B3 Longgeneeskunde 
+    ##                                                      2 
+    ##    verpleegafdeling B4-Oost Cardio-thoracale Chirurgie 
+    ##                                                      2 
+    ##                   verpleegafdeling B4-Oost Medium Care 
+    ##                                                      2 
+    ##                   verpleegafdeling B4-West Cardiologie 
+    ##                                                      1 
+    ##                               verpleegafdeling C4-Oost 
+    ##                                                      5 
+    ##                               verpleegafdeling D4-Oost 
+    ##                                                      3 
+    ##                               verpleegafdeling D4-West 
+    ##                                                      3 
+    ##                               verpleegafdeling D5-Oost 
+    ##                                                      5 
+    ##                               verpleegafdeling D5-West 
+    ##                                                      5 
+    ##                                    Verpleegafdeling D2 
+    ##                                                      3
+
+``` r
 # Sort nodes within each community based on node degree
 sorted_nodes <- lapply( unique( membership ), function( community ) { # use membership for louvain
   community_nodes <- which( membership == community ) # use membership for louvain
@@ -419,10 +493,11 @@ plot(
   main = "Community Structure",
   edge.alpha = 0.1
 )
-
 ```
 
-```{r differences per year 2, message=FALSE, warning=FALSE}
+![](GITHUB_Patient-movements_Louvain-clustering_files/figure-gfm/graph%20with%20communities%202-1.png)<!-- -->
+
+``` r
 # Split data based on hos_mut_Afd_code
 subset_df_split <- Patient_movements5 %>%
   #filter(year(hos_start_dt) == 2019) %>%
@@ -571,7 +646,9 @@ ggplot(melted_result.UMCU, aes(x = Year, y = Ward, fill = factor(Community))) +
   theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 20))
 ```
 
-```{r differences per year 3, message=FALSE, warning=FALSE}
+![](GITHUB_Patient-movements_Louvain-clustering_files/figure-gfm/differences%20per%20year%202-1.png)<!-- -->
+
+``` r
 # Split data based on hos_mut_Afd_code
 subset_df_split <- Patient_movements5 %>%
   #filter(year(hos_start_dt) == 2019) %>%
@@ -719,8 +796,9 @@ ggplot(melted_result.WKZ, aes(x = Year, y = Ward, fill = factor(Community))) +
   theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 20))
 ```
 
+![](GITHUB_Patient-movements_Louvain-clustering_files/figure-gfm/differences%20per%20year%203-1.png)<!-- -->
 
-```{r make the data for later, message=FALSE}
+``` r
 melted_result.UMCU$Hospital <- "UMCU"
 melted_result.WKZ$Hospital <- "WKZ"
 
@@ -734,5 +812,3 @@ Louvain.cluster.results <- rbind(melted_result.UMCU, melted_result.WKZ)
 #   row.names = FALSE
 # )
 ```
-
-

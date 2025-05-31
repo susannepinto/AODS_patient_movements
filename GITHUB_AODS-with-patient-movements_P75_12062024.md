@@ -1,35 +1,38 @@
----
-html_document:
-  toc: true
-  toc_depth: 4
-  toc_float: true
-  link-citations: true
-author: "Susanne Pinto"
-date: "2025-05"
-title: "P75 with patient movements"
-output:
-  github_document: default
-  word_document: default
-  pdf_document: default
-  html_document: default
----
+P75 with patient movements
+================
+Susanne Pinto
+2025-05
 
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(message = FALSE, warning = FALSE)
-```
-
-```{r environment, results = FALSE}
+``` r
 rm( list = ls() ) # remove working environment
 ```
 
+Below you can choose your pathogen and location, for the pathogen choose
+from: “Acinetobacter spp.”, “Acinetobacter Baumannii (Meropenem
+resistant)”, “Acinetobacter Baumannii (Quinolone and Aminoglycoside
+resistant)”, “Enterobacteriaceae (Meropenem resistant)”,
+“Enterobacteriaceae (Quinolone and Aminoglycoside resistant, excluding
+Escherichia coli)”, “Enterobacter cloacae (ESBL)”, “Enterobacter cloacae
+complex (ESBL)”, “Escherichia coli (Ciprofloxacin resistant)”,
+“Escherichia coli (ESBL)”, “Citrobacter freundii (Ciprofloxacin
+resistant)”, “Klebsiella pneumoniae (ESBL)j”, “Klebsiella oxytoca
+(ESBL)”, “Serratia marcescens”, “Pseudomonas aeruginosa”, “MDR
+Pseudomonas aeruginosa”, “Stenotrophomonas maltophila (Cotrimoxazole
+resistant)”, “Stenotrophomonas maltophila”, “Group A streptococcal
+infection (GAS)”, “Colistin resistance in bacteria”,
+“Penicillin-Resistant Streptococcus pneumoniae (PRSP)”,
+“Meticillin-Resistant Staphylococcus aureus (MRSA)”,
+“Meticillin-Susceptible Staphylococcus aureus (MSSA)”,
+“Vancomycin-resistant Enterococci (VRE)”, “Bacillus spp.”, “Candida spp.
+(fluconazole resistant in blood cultures)”, “Candida norvegensis”,
+“Aspergillus fumigatus”
 
-Below you can choose your pathogen and location, for the pathogen choose from:
-"Acinetobacter spp.", "Acinetobacter Baumannii (Meropenem resistant)", "Acinetobacter Baumannii (Quinolone and Aminoglycoside resistant)", "Enterobacteriaceae (Meropenem resistant)", "Enterobacteriaceae (Quinolone and Aminoglycoside resistant, excluding Escherichia coli)", "Enterobacter cloacae (ESBL)", "Enterobacter cloacae complex (ESBL)", "Escherichia coli (Ciprofloxacin resistant)", "Escherichia coli (ESBL)", "Citrobacter freundii (Ciprofloxacin resistant)", "Klebsiella pneumoniae (ESBL)j", "Klebsiella oxytoca (ESBL)", "Serratia marcescens", "Pseudomonas aeruginosa", "MDR Pseudomonas aeruginosa", "Stenotrophomonas maltophila (Cotrimoxazole resistant)", "Stenotrophomonas maltophila", "Group A streptococcal infection (GAS)", "Colistin resistance in bacteria", "Penicillin-Resistant Streptococcus pneumoniae (PRSP)", "Meticillin-Resistant Staphylococcus aureus (MRSA)", "Meticillin-Susceptible Staphylococcus aureus (MSSA)", "Vancomycin-resistant Enterococci (VRE)", "Bacillus spp.", "Candida spp. (fluconazole resistant in blood cultures)", "Candida norvegensis", "Aspergillus fumigatus"
+and for the location choose from: “U440” = “ICU cluster”, “A300” =
+“Internal medicine cluster”, “D360” = “Neurology cluster”, “C302” =
+“Surgery cluster”, “B410” = “Cardiology cluster”, “F311” = “Neonates and
+NICU cluster”, “F710” = “Mothers cluster”, “I330” = “Children cluster”)
 
-and for the location choose from:
-"U440" = "ICU cluster", "A300" = "Internal medicine cluster", "D360" = "Neurology cluster", "C302" = "Surgery cluster", "B410" = "Cardiology cluster", "F311" = "Neonates and NICU cluster", "F710" = "Mothers cluster", "I330" = "Children cluster")
-
-```{r choose your reference location and pathogen}
+``` r
 # Selected species (see below for the possibilities)
 selected_species <- "MDR Pseudomonas aeruginosa"  
 
@@ -38,28 +41,46 @@ selected_species <- "MDR Pseudomonas aeruginosa"
 specific_location <- "U440"
 ```
 
-
 # General introduction
 
-In this document we step-by-step introduce the different possibilities of incorporating patient movements (on group and individual level) to the P75 system:
+In this document we step-by-step introduce the different possibilities
+of incorporating patient movements (on group and individual level) to
+the P75 system:
 
-* Base case situation (without patient movements). Results are given for the currently investigated ward and all wards
+- Base case situation (without patient movements). Results are given for
+  the currently investigated ward and all wards
 
-* P75 based on Louvain clusters. Results are given for the different clusters and for all wards
+- P75 based on Louvain clusters. Results are given for the different
+  clusters and for all wards
 
-* P75 extended with individual patients movements in the 14 days prior to the positive test. Every prior location is awarded a point
+- P75 extended with individual patients movements in the 14 days prior
+  to the positive test. Every prior location is awarded a point
 
-* P75 extended with individual patients movements in the 14 days prior to the positive test. Every prior location is awarded a point per day
+- P75 extended with individual patients movements in the 14 days prior
+  to the positive test. Every prior location is awarded a point per day
 
-We simulate that the systems were used every week (on Tuesday), looking back and using the counts of the previous 30 days. The threshold is calculated based on those weekly counts. Note that this is different from the previous deliverable where monthly counts were used to calculate the threshold. 
+We simulate that the systems were used every week (on Tuesday), looking
+back and using the counts of the previous 30 days. The threshold is
+calculated based on those weekly counts. Note that this is different
+from the previous deliverable where monthly counts were used to
+calculate the threshold.
 
-A cluster is determined afterwards and is different from the counts that causes an alarm. If an alarm is returned, the first patient involved in that alarm is the first patient of a cluster. Every next patient within 60 days, who had stayed at the same location (or within a location belonging to the same Louvain cluster) is part of that cluster. Note that, if there was another patient with a positive test that caused an alarm within the next 30 days again, this alert was also assigned to that same cluster including all patients that were within 60 days (30 prior and 30 past) of this new alert.
+A cluster is determined afterwards and is different from the counts that
+causes an alarm. If an alarm is returned, the first patient involved in
+that alarm is the first patient of a cluster. Every next patient within
+60 days, who had stayed at the same location (or within a location
+belonging to the same Louvain cluster) is part of that cluster. Note
+that, if there was another patient with a positive test that caused an
+alarm within the next 30 days again, this alert was also assigned to
+that same cluster including all patients that were within 60 days (30
+prior and 30 past) of this new alert.
 
-We added two days to the collection date of the test, because test results come back later. 
+We added two days to the collection date of the test, because test
+results come back later.
 
-\
+  
 
-```{r packages}
+``` r
 library( here )
 library( tidyverse )
 library( tidyr )
@@ -96,11 +117,7 @@ conflicts_prefer( base::union )
 conflicts_prefer( cowplot::align_plots )
 ```
 
-```{r data bezwaar, echo=FALSE}
-load("~/Library/CloudStorage/OneDrive-VrijeUniversiteitAmsterdam/Documents/UMC Utrecht/Manuscript patient verplaatsingen/Analyses/Patient_movements/Data/glimsbezwaar.RData")
-```
-
-```{r load in the data, results = FALSE}
+``` r
 # Below the laboratory data, excluding patients who objected to the use of their data, is loaded
 # Also to every AfnameDatum two extra dates are added, because test results will come back after some time, and not on the same day
 
@@ -127,11 +144,7 @@ gold <- gold %>% arrange( IsolaatNaam_LAB )
 rm( glimsbezwaar )
 ```
 
-```{r data microorgan, echo=FALSE}
-entbact <- read_excel("~/Library/CloudStorage/OneDrive-VrijeUniversiteitAmsterdam/Documents/UMC Utrecht/Manuscript patient verplaatsingen/Analyses/Patient_movements/Data/MicroOrganism.xlsx")
-```
-
-```{r load in micorOrgan data, results = FALSE}
+``` r
 # This script loads the excelsheet that indicates whether a pathogen is an enterobacter. 
 # Not always needed, but for some species it is needed
 
@@ -152,21 +165,25 @@ goldentbact <- merge( gold, entbact2, by = c( "IsolaatNaam_LAB" ), all = TRUE )
 rm( entbact, entbact1 )
 ```
 
-\
+  
 
 # Include patient movements
 
-\
+  
 
-Some patient movements in the dataset were not physical movements, but represented for example administrative events, e.g. when a patient received treatment from another department (e.g. dialysis), while staying in the same place or when a movement attempt failed, but the bed was already reserved. These transfers can be recognized by the short transfer time. Therefore, we removed admissions to wards with a length less than four hours. Moreover, when a patient was transferred from one department to another, we counted this transfer as a single movement. If a patient returned to a previously visited ward, we counted this transfer as a new movement. However, consecutive patient movements within a single department were not considered in this study. 
+Some patient movements in the dataset were not physical movements, but
+represented for example administrative events, e.g. when a patient
+received treatment from another department (e.g. dialysis), while
+staying in the same place or when a movement attempt failed, but the bed
+was already reserved. These transfers can be recognized by the short
+transfer time. Therefore, we removed admissions to wards with a length
+less than four hours. Moreover, when a patient was transferred from one
+department to another, we counted this transfer as a single movement. If
+a patient returned to a previously visited ward, we counted this
+transfer as a new movement. However, consecutive patient movements
+within a single department were not considered in this study.
 
-```{r data movement, echo=FALSE}
-Patient_movements <- read_sas("~/Library/CloudStorage/OneDrive-VrijeUniversiteitAmsterdam/Documents/UMC Utrecht/Manuscript patient verplaatsingen/Analyses/Patient_movements/Data/opnames_pseudo20230725.sas7bdat")
-
-preferredID <- read_sas("~/Library/CloudStorage/OneDrive-VrijeUniversiteitAmsterdam/Documents/UMC Utrecht/Manuscript patient verplaatsingen/Analyses/Patient_movements/Data/voorkeurs_id.sas7bdat")
-```
-
-```{r movement data}
+``` r
 # The script below reads in the movement data, and remove the patients that were not in the Laboratory data
 
 # Read in the opname data
@@ -196,7 +213,7 @@ Patient_movements1.filtered <- Patient_movements1 %>%
 rm( Patient_movements, preferredID )
 ```
 
-```{r clean movement data}
+``` r
 # The script below removes the pseudo or failed attempt movements, i.e. short movements >= 4 hour.
 # Also sequential movements within a ward are merged and not be seen as unique movements afterwards.
 # Note that this data is not used in the base case, or for the Louvain clustering analysis
@@ -262,23 +279,17 @@ Patient_movements4_merged <- select( Patient_movements4_merged, -group_id )
 rm( Patient_movements1, Patient_movements1.filtered, Patient_movements2, Patient_movements3, Patient_movements4, time_difference )
 ```
 
-\
+  
 
 # Define Louvain clusters
 
-\
+  
 
-Note that wards are opened and closed over time and that patient movements can also differ over time. Therefore, the clusters are also different over the years. 
+Note that wards are opened and closed over time and that patient
+movements can also differ over time. Therefore, the clusters are also
+different over the years.
 
-
-```{r data clusters, echo=FALSE}
-Louvain.cluster.results <- read.csv("~/Library/CloudStorage/OneDrive-VrijeUniversiteitAmsterdam/Documents/UMC Utrecht/Manuscript patient verplaatsingen/Analyses/Patient_movements/Data/Louvain.cluster.results.csv",
-  header = TRUE,
-  sep = ";",
-  stringsAsFactors = FALSE)
-```
-
-```{r define clusters}
+``` r
 # Set Louvain clusters, these clusters were defined with an earlier network study
 
 # load the joined data
@@ -371,7 +382,7 @@ Louvain.cluster.results <- Louvain.cluster.results %>%
   rename(Louvain_cluster = Louvain_cluster2)
 ```
 
-```{r select locations}
+``` r
 #selected.locations <- c("B531", "B430", "B330", "B340", "U440", "F311", "F341", "F342", "F343", "F344", "F310", "F312", "F710")
 
 # Extract the cluster of the specific location
@@ -393,18 +404,14 @@ selected.locations <- unique(same_cluster_locations$location)
 rm( same_cluster_locations)
 ```
 
-\
-\
+  
+  
 
 ## Selection of pathogen
 
-\
+  
 
-```{r data scripts, echo=FALSE}
-script_path <- "~/Library/CloudStorage/OneDrive-VrijeUniversiteitAmsterdam/Documents/UMC Utrecht/Manuscript patient verplaatsingen/Analyses/Patient_movements/Scripts/selection_scripts.R"
-```
-
-```{r mimic data, results = TRUE}
+``` r
 # The script below filters the complete dataset (with all pathogens/locations) 
 # Create two new columns (month and year) based on AfnameDatum_LAB
 # Than filter the data based on the conditions given
@@ -476,7 +483,7 @@ rm( script_path )
 rm(list = ls(pattern = "^select_"))
 ```
 
-```{r plot incidences, fig.width=15}
+``` r
 # Create a combined date column
 plot_dataset <- gold_select %>%
   mutate(month = sprintf("%02d", as.numeric(month)),
@@ -523,7 +530,11 @@ combined_plot <- plot1 + plot2
 
 # Display the combined plot
 print(combined_plot)
+```
 
+![](GITHUB_AODS-with-patient-movements_P75_12062024_files/figure-gfm/plot%20incidences-1.png)<!-- -->
+
+``` r
 # Define the file path to save the plot
 file_path <- file.path("~/Documents/AODS_Susanne/Patient_movements/Results/Results patient movements", selected_species, specific_cluster, "P75/Descriptive results/combined_plot.png")
 
@@ -534,27 +545,36 @@ file_path <- file.path("~/Documents/AODS_Susanne/Patient_movements/Results/Resul
 rm( plot_dataset )
 ```
 
-**Fig. 1** MDR Pseudomonas aeruginosa species abundances in the UMCU and WKZ per month and year. And for the ICU cluster.
+**Fig. 1** MDR Pseudomonas aeruginosa species abundances in the UMCU and
+WKZ per month and year. And for the ICU cluster.
 
-\
+  
 
 # P75 system
 
-\ 
+ 
 
-The current system being utilized in the UMC Utrecht summarizes the monthly count of a specific microorganism, bug-drug combination and/or units under surveillance. The threshold for an alert is based on the 75^th^ percentile (75% of the observations are below that value) of monthly counts for the preceding year and is redetermined every year. 
+The current system being utilized in the UMC Utrecht summarizes the
+monthly count of a specific microorganism, bug-drug combination and/or
+units under surveillance. The threshold for an alert is based on the
+75<sup>th</sup> percentile (75% of the observations are below that
+value) of monthly counts for the preceding year and is redetermined
+every year.
 
-\
+  
 
 #### P75 system - base case thresholds (per department)
 
-\
+  
 
-In the current surveillance, only the adult ICU is monitored, however, with a new system it might be possible to monitor all wards. Moreover, it makes comparison to the other scenarios that make use of patients' movements.
+In the current surveillance, only the adult ICU is monitored, however,
+with a new system it might be possible to monitor all wards. Moreover,
+it makes comparison to the other scenarios that make use of patients’
+movements.
 
-\
+  
 
-```{r goldPA per department, results = FALSE}
+``` r
 # Below we add the count per month, week and 30 days to the dataset 
 # Also it removes repeated samples (within a year) per patient.
 # Also rows of multiple patients (in the same location) that has the same AfnameDatum are merged together
@@ -625,10 +645,10 @@ goldPARR$year <- format(goldPARR$AfnameDatum_LAB, "%Y")
 rm( goldPAR )
 ```
 
+The P75 threshold is calculated based on the counts (calculated per 30
+days) per location of the previous year.
 
-The P75 threshold is calculated based on the counts (calculated per 30 days) per location of the previous year.
-
-```{r calculate p75 for goldPA per department, result = FALSE}
+``` r
 # This script calculates the thresholds per year per location
 
 # Add the weeknumber to the dataset
@@ -658,7 +678,7 @@ goldPA.P75 <- goldPA.P75 %>% arrange( year, location )
 rm( goldPARR2 )
 ```
 
-```{r return alarms goldPA per department}
+``` r
 # The script below adds the alarms to the data
 # Because we simulate that the system is used every Tuesday all information is moved to that Tuesday.
 
@@ -728,7 +748,7 @@ goldPARR_alarms <- goldPARR_alarms %>%
 rm( date_sequence, all_dates, goldPARR, goldPARR_merged )
 ```
 
-```{r calculate cluster number and range base case per ward}
+``` r
 # Below the cluster number and cluster ranges are added. This is done per location
 # Note that the count that caused the alarm is different from the number of patients belonging to a cluster.
 # A cluster is not calculated on the Tuesday that the system is runned, but later on, because it also uses information of the future.
@@ -805,7 +825,7 @@ rownames(goldPARR_alarms) <- NULL
 rm( cluster_ranges, cluster_num, cluster_numbers, current_date, current_location, i, next_alarm_index, within_30_days )
 ```
 
-```{r calculate alarm number and range base case per ward}
+``` r
 # Below the alarm number and alarm ranges are added. This is done per location
 # Note that the count that caused the alarm is different from the number of patients belonging to a alarm.
 # A alarm is not calculated on the Tuesday that the system is runned, but later on, because it also uses information of the future.
@@ -882,7 +902,7 @@ rownames(goldPARR_alarms) <- NULL
 rm( alarm_ranges, alarm_num, alarm_numbers, current_date, current_location, i, next_alarm_index, within_30_days )
 ```
 
-```{r prepare data to plot goldPA per department}
+``` r
 # Below only the information of the Tuesdays is kept (because that is the day that the system is runned).
 # All rows are splitted again, because all information was now in one row.
 # Alarms that were raised despite a cluster size < 2 will be turned off.
@@ -1015,7 +1035,7 @@ goldPARR_small_2 <- goldPARR_small_2 %>%
 goldPARR_alarms_basecaseWARDS <- goldPARR_small_2
 ```
 
-```{r Plot goldPA per department, fig.width=15, fig.height=10}
+``` r
 # The script below creates an heatmap to show the results for 2019
 
 # Clean and process data
@@ -1058,23 +1078,37 @@ goldPARR_plot_heatmap <- ggplot(goldPARR_small_2_with_gaps, aes(x = year_month, 
   scale_x_date(date_labels = "%b %Y", date_breaks = "2 months", expand = c(0, 0))
 
 print(goldPARR_plot_heatmap)
+```
 
+![](GITHUB_AODS-with-patient-movements_P75_12062024_files/figure-gfm/Plot%20goldPA%20per%20department-1.png)<!-- -->
+
+``` r
 # clean environment
 rm( aligned_plots, goldPARR_plot_heatmap, goldPA, goldPA.P75 )
 ```
-**Fig. 2** MDR Pseudomonas aeruginosa outbreak detection by P75 method (base case ICU cluster). Red boxes indicate the month where the P75 threshold was crossed, green boxes are values below or equal to the threshold. A grey box means that no threshold was available, possibly because that ward was closed in the previous year, or no incidences occurred in the previous year. Numbers in the boxes indicate the number of positive tests.
 
-\
+**Fig. 2** MDR Pseudomonas aeruginosa outbreak detection by P75 method
+(base case ICU cluster). Red boxes indicate the month where the P75
+threshold was crossed, green boxes are values below or equal to the
+threshold. A grey box means that no threshold was available, possibly
+because that ward was closed in the previous year, or no incidences
+occurred in the previous year. Numbers in the boxes indicate the number
+of positive tests.
+
+  
 
 #### P75 system - Thresholds per cluster (based on Louvain clustering)
 
-\
+  
 
-See also script "Patient movements_Louvain clustering_02072024". Louvain clustering was performed on the UMCU and WKZ network separately. Clusters from 2019 were used. Instead of calculating the threshold per ward, now the group of wards is used.
+See also script “Patient movements_Louvain clustering_02072024”. Louvain
+clustering was performed on the UMCU and WKZ network separately.
+Clusters from 2019 were used. Instead of calculating the threshold per
+ward, now the group of wards is used.
 
-\
+  
 
-```{r mimic goldPA per cluster, results = TRUE}
+``` r
 # Remove duplicated rows
 # Keep samples that are more than 1 year apart
 goldPA <- gold_select %>% 
@@ -1095,7 +1129,7 @@ goldPA <- goldPA %>%
   mutate(Louvain_cluster = ifelse(is.na(Louvain_cluster), "Cluster NA", Louvain_cluster))
 ```
 
-```{r goldPA per cluster, results = FALSE}
+``` r
 # Below we add the count per month, week and 30 days to the dataset 
 # Also rows of multiple patients (in the same location) that has the same AfnameDatum are merged together
 
@@ -1158,9 +1192,10 @@ goldPARR$year <- format(goldPARR$AfnameDatum_LAB, "%Y")
 rm( goldPA, goldPAR, goldPAR2 )
 ```
 
-The P75 threshold is calculated based on the counts (calculated per 30 days) per Louvain cluster of the previous year.
+The P75 threshold is calculated based on the counts (calculated per 30
+days) per Louvain cluster of the previous year.
 
-```{r calculate p75 for goldPA per cluster, result = FALSE}
+``` r
 # This script calculates the thresholds per year per location
 
 # Add the weeknumber to the dataset
@@ -1206,7 +1241,7 @@ goldPA.P75 <- goldPA.P75 %>% arrange( year, Louvain_cluster, location )
 rm( goldPARR2 )
 ```
 
-```{r return alarms goldPA per cluster}
+``` r
 # The script below adds the alarms to the data
 # Because we simulate that the system is used every Tuesday all information is moved to that Tuesday.
 
@@ -1276,7 +1311,7 @@ goldPARR_alarms <- goldPARR_alarms %>%
 rm( date_sequence, all_dates, goldPARR, goldPARR_merged )
 ```
 
-```{r calculate cluster number and range per Louvain cluster}
+``` r
 # Below the cluster number and cluster ranges are added. This is done per cluster
 # Note that the count that caused the alarm is different from the number of patients belonging to a cluster.
 # A cluster is not calculated on the Tuesday that the system is runned, but later on, because it also uses information of the future.
@@ -1353,7 +1388,7 @@ rownames(goldPARR_alarms) <- NULL
 rm( cluster_ranges, cluster_num, cluster_numbers, current_date, current_location, i, next_alarm_index, within_30_days )
 ```
 
-```{r calculate alarm number and range Louvain cluster}
+``` r
 # Below the alarm number and alarm ranges are added. This is done per Louvain_cluster
 # Note that the count that caused the alarm is different from the number of patients belonging to a alarm.
 # A alarm is not calculated on the Tuesday that the system is runned, but later on, because it also uses information of the future.
@@ -1430,7 +1465,7 @@ rownames(goldPARR_alarms) <- NULL
 rm( alarm_ranges, alarm_num, alarm_numbers, current_date, current_location, i, next_alarm_index, within_30_days )
 ```
 
-```{r prepare data to plot goldPA per cluster}
+``` r
 # Below only the information of the Tuesdays is kept (because that is the day that the system is runned).
 # all rows are splitted again, because all information was now in one row.
 # Alarms that were raised despite a cluster size < 2 will be turned off.
@@ -1569,7 +1604,7 @@ goldPARR_small_2 <- goldPARR_small_2 %>%
 goldPARR_alarms_clusters <- goldPARR_small_2
 ```
 
-```{r Plot goldPA per louvain cluster, fig.width=15, fig.height=10}
+``` r
 # The script below creates a heatmap to show the results for 2019
 
 # Clean and process data
@@ -1617,14 +1652,24 @@ goldPARR_plot_heatmap <- ggplot(goldPARR_small_2_with_gaps, aes(x = year_month, 
   scale_y_discrete(limits = desired_order)
 
 print(goldPARR_plot_heatmap)
+```
 
+![](GITHUB_AODS-with-patient-movements_P75_12062024_files/figure-gfm/Plot%20goldPA%20per%20louvain%20cluster-1.png)<!-- -->
+
+``` r
 # clean environment
 rm( aligned_plots, goldPARR_plot_heatmap, goldPARR_alarms, goldPA )
 ```
-**Fig. 3** MDR Pseudomonas aeruginosa outbreak detection by P75 method (Louvain clustering for ICU cluster). Red boxes indicate the month where the P75 threshold was crossed, green boxes are values below or equal to the threshold. A grey box means that no threshold was available, possibly because that ward was closed in the previous year, or no incidences occurred in the previous year. Numbers in the boxes indicate the number of positive tests.
 
+**Fig. 3** MDR Pseudomonas aeruginosa outbreak detection by P75 method
+(Louvain clustering for ICU cluster). Red boxes indicate the month where
+the P75 threshold was crossed, green boxes are values below or equal to
+the threshold. A grey box means that no threshold was available,
+possibly because that ward was closed in the previous year, or no
+incidences occurred in the previous year. Numbers in the boxes indicate
+the number of positive tests.
 
-```{r Plot goldPA per louvain cluster 2, fig.width=15, fig.height=10}
+``` r
 # The script below creates an heatmap to show the results for 2019
 
 # Clean and process data
@@ -1675,17 +1720,28 @@ goldPARR_plot_heatmap <- ggplot(goldPARR_small_2_with_gaps, aes(x = year_month, 
   scale_y_discrete(limits = desired_order)
 
 print(goldPARR_plot_heatmap)
+```
 
+![](GITHUB_AODS-with-patient-movements_P75_12062024_files/figure-gfm/Plot%20goldPA%20per%20louvain%20cluster%202-1.png)<!-- -->
+
+``` r
 # clean environment
 rm( gaps, goldPA_march, goldPA.P75, goldPARR_small, goldPARR_small_2, goldPARR_small_2_clean, goldPARR_small_2_with_gaps, location_summary, current_Louvain_cluster, desired_order, years )
 ```
-**Fig. 4** MDR Pseudomonas aeruginosa outbreak detection by P75 method (Louvain clustering for ICU cluster per department). Red boxes indicate the month where the P75 threshold was crossed, green boxes are values below or equal to the threshold. A grey box means that no threshold was available, possibly because that ward was closed in the previous year, or no incidences occurred in the previous year. Numbers in the boxes indicate the number of positive tests.
 
-\
+**Fig. 4** MDR Pseudomonas aeruginosa outbreak detection by P75 method
+(Louvain clustering for ICU cluster per department). Red boxes indicate
+the month where the P75 threshold was crossed, green boxes are values
+below or equal to the threshold. A grey box means that no threshold was
+available, possibly because that ward was closed in the previous year,
+or no incidences occurred in the previous year. Numbers in the boxes
+indicate the number of positive tests.
+
+  
 
 #### Combine base case and Louvain cluster in one plot
 
-```{r goldPA compare base case and clusters, fig.width= 15}
+``` r
 # goldPARR_alarms2019_basecaseWARDS
 # goldPARR_alarms2019_clusters
 
@@ -1750,7 +1806,11 @@ combined_plot <- plot1 / plot2 + plot_layout(guides = "collect")
 
 # Print the combined plot
 print(combined_plot)
+```
 
+![](GITHUB_AODS-with-patient-movements_P75_12062024_files/figure-gfm/goldPA%20compare%20base%20case%20and%20clusters-1.png)<!-- -->
+
+``` r
 file_path <- file.path("~/Documents/AODS_Susanne/Patient_movements/Results/Results patient movements", selected_species, specific_cluster, "P75/Descriptive results/combined_plot2.png")
 
 # Save the combined plot
@@ -1760,20 +1820,26 @@ file_path <- file.path("~/Documents/AODS_Susanne/Patient_movements/Results/Resul
 rm( combined_plot, plot1, plot2, goldPARR_alarms_basecase_filt, goldPARR_alarms_clusters_filt )
 ```
 
-**Fig. 5** MDR Pseudomonas aeruginosa outbreak detection by P75 method (per ward (upper) and cluster of wards (lower) for ICU cluster). Red boxes indicate the month where the P75 threshold was crossed, green boxes are values below or equal to the threshold. A grey box means that no threshold was available, possibly because that ward was closed in the previous year, or no incidences occurred in the previous year. Numbers in the boxes indicate the number of positive tests.
+**Fig. 5** MDR Pseudomonas aeruginosa outbreak detection by P75 method
+(per ward (upper) and cluster of wards (lower) for ICU cluster). Red
+boxes indicate the month where the P75 threshold was crossed, green
+boxes are values below or equal to the threshold. A grey box means that
+no threshold was available, possibly because that ward was closed in the
+previous year, or no incidences occurred in the previous year. Numbers
+in the boxes indicate the number of positive tests.
 
-\
+  
 
 #### P75 system - Thresholds including patient history (one point per location)
 
-\
+  
 
-Now, every location the patient has visited in the 14 days preceding the positive test will be counted. 
+Now, every location the patient has visited in the 14 days preceding the
+positive test will be counted.
 
-\
+  
 
-
-```{r mimic goldPA movement data 1, results = TRUE}
+``` r
 # Remove duplicated rows
 # Keep samples that are more than 1 year apart
 goldPA <- gold_select %>% 
@@ -1783,7 +1849,7 @@ goldPA <- gold_select %>%
   )
 ```
 
-```{r combine with movement data goldPA 1}
+``` r
 # The script below prepares the movement data and laboratory data for merging them.
 
 # Rename columns in Patient_movements4_merged
@@ -1852,7 +1918,7 @@ merged_df_goldPA <- merged_df_goldPA %>%
 rm( columns_to_remove, goldPA.short, common_columns, empty_df  )
 ```
 
-```{r keep data within 2 weeks goldPA movement data 1}
+``` r
 # The script below keeps the rows with the unique locations withing two weeks prior to the Afnamedatum, in this way they also get a count.
 
 # Sort the data
@@ -1904,7 +1970,7 @@ goldPA <- final_merged_df
 rm( goldPA.new, two.weeks_complete, final_merged_df  )
 ```
 
-```{r goldPA movement data 1, results = FALSE}
+``` r
 # Below we add the count per month, week and 30 days to the dataset 
 # Also rows of multiple patients (in the same location) that has the same AfnameDatum are merged together
 
@@ -1986,9 +2052,10 @@ goldPARR$year <- format(goldPARR$AfnameDatum_LAB_prior, "%Y")
 rm( filtered_df, filled_df, goldPA, goldPAR, goldPAR2 )
 ```
 
-The P75 threshold is calculated based on the counts (calculated per 30 days) per location of the previous year.
+The P75 threshold is calculated based on the counts (calculated per 30
+days) per location of the previous year.
 
-```{r calculate p75 for goldPA movement data 1, result = FALSE}
+``` r
 # This script calculates the thresholds per year per location
 
 # Add the weeknumber to the dataset
@@ -2018,7 +2085,7 @@ goldPA.P75 <- goldPA.P75 %>% arrange( year, location )
 rm( goldPARR2 )
 ```
 
-```{r return alarms goldPA movement data 1}
+``` r
 # The script below adds the alarms to the data
 # Because we simulate that the system is used every Tuesday all information is moved to that Tuesday.
 
@@ -2087,7 +2154,7 @@ goldPARR_alarms <- goldPARR_alarms %>%
 rm( date_sequence, all_dates, goldPARR, goldPARR_merged )
 ```
 
-```{r calculate cluster number and range patient history per ward}
+``` r
 # Below the cluster number and cluster ranges are added. This is done per cluster
 # Note that the count that caused the alarm is different from the number of patients belonging to a cluster.
 # A cluster is not calculated on the Tuesday that the system is runned, but later on, because it also uses information of the future.
@@ -2165,7 +2232,7 @@ rownames(goldPARR_alarms) <- NULL
 rm( cluster_ranges, cluster_num, cluster_numbers, current_date, current_location, i, next_alarm_index, within_30_days )
 ```
 
-```{r calculate alarm number and range patient history per ward}
+``` r
 # Below the alarm number and alarm ranges are added. This is done per location
 # Note that the count that caused the alarm is different from the number of patients belonging to a alarm.
 # A alarm is not calculated on the Tuesday that the system is runned, but later on, because it also uses information of the future.
@@ -2242,7 +2309,7 @@ rownames(goldPARR_alarms) <- NULL
 rm( alarm_ranges, alarm_num, alarm_numbers, current_date, current_location, i, next_alarm_index, within_30_days )
 ```
 
-```{r prepare data to plot goldPA movement data 1}
+``` r
 # Below only the information of the Tuesdays is kept (because that is the day that the system is runned).
 # all rows are splitted again, because all information was now in one row.
 # Alarms that were raised despite a cluster size < 2 will be turned off.
@@ -2369,7 +2436,7 @@ goldPARR_small_2 <- goldPARR_small_2 %>%
   separate_rows(studyId_outbreakdetec_Patient_per_week, sep = "_") 
 ```
 
-```{r add original information movements 1}
+``` r
 # Filter and process gold_select dataset
 gold_select_filtered <- gold_select %>%
   group_by(studyId_outbreakdetec_Patient) %>%
@@ -2407,7 +2474,7 @@ goldPARR_small_2 <- goldPARR_small_2 %>%
 goldPARR_alarms_historyperWARD <- goldPARR_small_2
 ```
 
-```{r Plot goldPA movement data 1, fig.width=15, fig.height=10}
+``` r
 # The script below creates an heatmap to show the results for 2019
 
 # Clean and process data
@@ -2450,23 +2517,37 @@ goldPARR_plot_heatmap <- ggplot(goldPARR_small_2_with_gaps, aes(x = year_month, 
   scale_x_date(date_labels = "%b %Y", date_breaks = "2 months", expand = c(0, 0))
 
 print(goldPARR_plot_heatmap)
+```
 
+![](GITHUB_AODS-with-patient-movements_P75_12062024_files/figure-gfm/Plot%20goldPA%20movement%20data%201-1.png)<!-- -->
+
+``` r
 # clean environment
 rm( aligned_plots, goldPARR_plot_heatmap, goldPA, goldPA.P75 )
 ```
-**Fig. 6** MDR Pseudomonas aeruginosa outbreak detection by P75 method (with individual patient history - one point per location for ICU cluster). Red boxes indicate the month where the P75 threshold was crossed, green boxes are values below or equal to the threshold. A grey box means that no threshold was available, possibly because that ward was closed in the previous year, or no incidences occurred in the previous year. Numbers in the boxes indicate the number of positive tests.
 
-\
+**Fig. 6** MDR Pseudomonas aeruginosa outbreak detection by P75 method
+(with individual patient history - one point per location for ICU
+cluster). Red boxes indicate the month where the P75 threshold was
+crossed, green boxes are values below or equal to the threshold. A grey
+box means that no threshold was available, possibly because that ward
+was closed in the previous year, or no incidences occurred in the
+previous year. Numbers in the boxes indicate the number of positive
+tests.
+
+  
 
 #### P75 system - Thresholds including patient history (one point every day)
 
-\
+  
 
-Now, every location the patient has visited in the 14 days preceding the positive test will be counted. This counting haooend every day, meaning that a longer stay will result in a higher count for a location. 
+Now, every location the patient has visited in the 14 days preceding the
+positive test will be counted. This counting haooend every day, meaning
+that a longer stay will result in a higher count for a location.
 
-\
+  
 
-```{r mimic goldPA movement data 2, results = TRUE}
+``` r
 # Remove duplicated rows
 # Keep samples that are more than 1 year apart
 goldPA <- gold_select %>% 
@@ -2476,7 +2557,7 @@ goldPA <- gold_select %>%
   )
 ```
 
-```{r combine with movement data goldPA 2}
+``` r
 # The script below prepares the movement data and laboratory data for merging them.
 
 # Rename columns in Patient_movements4_merged
@@ -2545,7 +2626,7 @@ merged_df_goldPA <- merged_df_goldPA %>%
 rm( columns_to_remove, goldPA.short, common_columns, empty_df  )
 ```
 
-```{r keep data within 2 weeks goldPA movement data 2}
+``` r
 # The script below keeps the rows with the unique locations withing two weeks prior to the Afnamedatum, in this way they also get a count.
 
 # Sort the data
@@ -2593,7 +2674,7 @@ goldPA <- final_merged_df
 rm( goldPA.new, two.weeks_complete, final_merged_df  )
 ```
 
-```{r goldPA movement data 2, results = FALSE}
+``` r
 # Below we add the count per month, week and 30 days to the dataset 
 # Also rows of multiple patients (in the same location) that has the same AfnameDatum are merged together
 
@@ -2674,9 +2755,10 @@ goldPARR$year <- format(goldPARR$AfnameDatum_LAB_prior, "%Y")
 rm( filtered_df, filled_df, goldPA, goldPAR, goldPAR2 )
 ```
 
-The P75 threshold is calculated based on the counts (calculated per 30 days) per location of the previous year.
+The P75 threshold is calculated based on the counts (calculated per 30
+days) per location of the previous year.
 
-```{r calculate p75 for goldPA movement data 2, result = FALSE}
+``` r
 # This script calculates the thresholds per year per location
 
 # Add the weeknumber to the dataset
@@ -2706,7 +2788,7 @@ goldPA.P75 <- goldPA.P75 %>% arrange( year, location )
 rm( goldPARR2 )
 ```
 
-```{r return alarms goldPA movement data 2}
+``` r
 # The script below adds the alarms to the data
 # Because we simulate that the system is used every Tuesday all information is moved to that Tuesday.
 
@@ -2775,7 +2857,7 @@ goldPARR_alarms <- goldPARR_alarms %>%
 rm( date_sequence, all_dates, goldPARR, goldPARR_merged )
 ```
 
-```{r calculate cluster number and range history per day}
+``` r
 # Below the cluster number and cluster ranges are added. This is done per cluster
 # Note that the count that caused the alarm is different from the number of patients belonging to a cluster.
 # A cluster is not calculated on the Tuesday that the system is runned, but later on, because it also uses information of the future.
@@ -2852,7 +2934,7 @@ rownames(goldPARR_alarms) <- NULL
 rm( cluster_ranges, cluster_num, cluster_numbers, current_date, current_location, i, next_alarm_index, within_30_days )
 ```
 
-```{r calculate alarm number and range patient history per day}
+``` r
 # Below the alarm number and alarm ranges are added. This is done per location
 # Note that the count that caused the alarm is different from the number of patients belonging to a alarm.
 # A alarm is not calculated on the Tuesday that the system is runned, but later on, because it also uses information of the future.
@@ -2929,7 +3011,7 @@ rownames(goldPARR_alarms) <- NULL
 rm( alarm_ranges, alarm_num, alarm_numbers, current_date, current_location, i, next_alarm_index, within_30_days )
 ```
 
-```{r prepare data to plot goldPA movement data 2}
+``` r
 # Below only the information of the Tuesdays is kept (because that is the day that the system is runned).
 # all rows are splitted again, because all information was now in one row.
 # Alarms that were raised despite a cluster size < 2 will be turned off.
@@ -3056,7 +3138,7 @@ goldPARR_small_2 <- goldPARR_small_2 %>%
   separate_rows(studyId_outbreakdetec_Patient_per_week, sep = "_") 
 ```
 
-```{r add original information movements 2}
+``` r
 # Filter and process gold_select dataset
 gold_select_filtered <- gold_select %>%
   group_by(studyId_outbreakdetec_Patient) %>%
@@ -3094,7 +3176,7 @@ goldPARR_small_2 <- goldPARR_small_2 %>%
 goldPARR_alarms_historyperDAY <- goldPARR_small_2
 ```
 
-```{r Plot goldPA movement data 2, fig.width=25, fig.height=10}
+``` r
 # The script below creates an heatmap to show the results for 2019
 
 # Clean and process data
@@ -3137,12 +3219,21 @@ goldPARR_plot_heatmap <- ggplot(goldPARR_small_2_with_gaps, aes(x = year_month, 
   scale_x_date(date_labels = "%b %Y", date_breaks = "2 months", expand = c(0, 0))
 
 print(goldPARR_plot_heatmap)
+```
 
+![](GITHUB_AODS-with-patient-movements_P75_12062024_files/figure-gfm/Plot%20goldPA%20movement%20data%202-1.png)<!-- -->
+
+``` r
 # clean environment
 rm( aligned_plots, goldPARR_plot_heatmap, goldPA, goldPA.P75 )
 ```
-**Fig. 7** MDR Pseudomonas aeruginosa outbreak detection by P75 method (with individual patient history - one point every day for ICU cluster). Red boxes indicate the month where the P75 threshold was crossed, green boxes are values below or equal to the threshold. A grey box means that no threshold was available, possibly because that ward was closed in the previous year, or no incidences occurred in the previous year. Numbers in the boxes indicate the number of positive tests.
 
+**Fig. 7** MDR Pseudomonas aeruginosa outbreak detection by P75 method
+(with individual patient history - one point every day for ICU cluster).
+Red boxes indicate the month where the P75 threshold was crossed, green
+boxes are values below or equal to the threshold. A grey box means that
+no threshold was available, possibly because that ward was closed in the
+previous year, or no incidences occurred in the previous year. Numbers
+in the boxes indicate the number of positive tests.
 
-\
-
+  
